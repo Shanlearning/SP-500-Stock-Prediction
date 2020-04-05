@@ -1,66 +1,98 @@
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Wed Mar 11 00:40:46 2020
-
-@author: zhong
+LSTM with avg price 
+@author: effie & Shan
 """
-import os
-import numpy as np
-from collections import Counter
-import matplotlib.pyplot as plt
-import pandas as pd
+###############################################################################
+'load api data'
 from alpha_vantage.timeseries import TimeSeries
-###############################################################################
-'load s&p 500 data'
-ts = TimeSeries(key='HGIKZ27XNJ7TS7N2')
-# Get json object with the intraday data and another with  the call's metadata
-data, meta_data = ts.get_intraday(symbol = 'SPX', interval = '15min' , outputsize = 'full')
+from alpha_vantage.foreignexchange import ForeignExchange
+from alpha_vantage.cryptocurrencies import CryptoCurrencies
 
-
-###############################################################################
 import gdelt
-from datetime import datetime
-'load news data'
-gd2 = gdelt.gdelt(version=2)
-# Single 15 minute interval pull, output to json format with mentions table
-events = gd2.Search(['2015 Feb 18',datetime.today().strftime('%Y %b %d')],translation = False, table='events',output='pandas dataframe')
+##########################################
+import json
+import urllib
 
-
-event_dates = [datetime.strptime(str(item),'%Y%m%d%H%M%S') for item in events.DATEADDED]
-
-event_dates
-
-print(datetime.strptime(str(events.DATEADDED[0]),'%Y%m%d%H%M%S'))
-
-events.keys()
-
-a = np.unique([str(item) for item in events.Actor2Name])
-
-events.Actor1Name
-np.unique(events.Actor2Name)
-
-'This is the average “tone” of a event, by transfering words into sentiment scores'
-events.AvgTone
-
-
-events.keys()
-
+import bs4 as bs
+import requests
+##########################################
+'text modify'
+import re
+##########################################
 import numpy as np
-np.unique(events.CAMEOCodeDescription[0])
+from tqdm import tqdm
+import math
+##########################################
+from datetime import datetime
+import time
+##########################################
+'to plot within notebook'
+import matplotlib.pyplot as plt
+
+##########################################
+'importing required nn libraries'
+from sklearn.preprocessing import MinMaxScaler
+import tensorflow as tf
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense,  LSTM
+
+################################################
+import os
+os.chdir('C:\\Users\\zhong\\Dropbox\\github\\sp500')
+###############################################################################
+"""load the name list of s&p 500 companies"""
+
+def save_sp500_tickers():
+    resp = requests.get('http://en.wikipedia.org/wiki/List_of_S%26P_500_companies')
+    soup = bs.BeautifulSoup(resp.text, 'lxml')
+    table = soup.find('table', {'class': 'wikitable sortable'})
+    company_names = []
+    tickers = []
+    for row in table.findAll('tr')[1:]:
+        ticker = row.findAll('td')[0].text.strip()
+        ticker = "".join(re.findall("[a-zA-Z]+", ticker))
+        tickers.append(ticker)
+        company_names.append(row.findAll('td')[1].text)
+        
+    return tickers , company_names
+##################################
+    
+tickers , company_names = save_sp500_tickers()
+
+tickers[1:10]
+company_names[1:10]
+
+'actually 505 companies, as there are company like 	Alphabet Inc Class A and Alphabet Inc Class C'
+len(company_names)
+
+###############################################################################
+'load adjusted s&p 500 data via alpha_vantage api'
+'load bitcoin price data'
+'load currency exchange rate data'
+ts = TimeSeries(key='HGIKZ27XNJ7TS7N2')
+fe = ForeignExchange(key='HGIKZ27XNJ7TS7N2')
+cc = CryptoCurrencies(key='HGIKZ27XNJ7TS7N2')
+
+'do not consider for adjust closing'
+#SPX_data, meta_data = ts.get_daily_adjusted(symbol = 'SPX', outputsize = 'full')
+
+data =  json.loads(open('sp500.json').read())
+
+'load individual stock data for 505 companies on list'
+for company in tqdm(tickers):
+    max_date = np.max([datetime.strptime(item ,'%Y-%m-%d') for item in list(data.keys())])
+    if company not in data[max_date.strftime('%Y-%m-%d')].keys():
+        _data, _meta_data = ts.get_daily(symbol = company, outputsize = 'full')
+        for date in _data.keys():
+            if date in data.keys():        
+                data[date][company]= float(_data[date]['4. close']) 
+        time.sleep(12)
 
 
-len(a)
+'save data'
+with open('sp500.json', 'w') as fp:
+    json.dump(data, fp)
 
-
-events.columns
-
-
-
-
-
-
-
-
-
-
-
+data

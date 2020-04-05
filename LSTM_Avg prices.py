@@ -18,10 +18,15 @@ import urllib
 import bs4 as bs
 import requests
 ##########################################
+'text modify'
+import re
+##########################################
 import numpy as np
+from tqdm import tqdm
 import math
 ##########################################
 from datetime import datetime
+import time
 ##########################################
 'to plot within notebook'
 import matplotlib.pyplot as plt
@@ -33,6 +38,9 @@ import tensorflow as tf
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense,  LSTM
 
+################################################
+import os
+os.chdir('C:\\Users\\zhong\\Dropbox\\github\\sp500')
 ###############################################################################
 """load the name list of s&p 500 companies"""
 
@@ -43,7 +51,9 @@ def save_sp500_tickers():
     company_names = []
     tickers = []
     for row in table.findAll('tr')[1:]:
-        tickers.append(row.findAll('td')[0].text.strip())
+        ticker = row.findAll('td')[0].text.strip()
+        ticker = "".join(re.findall("[a-zA-Z]+", ticker))
+        tickers.append(ticker)
         company_names.append(row.findAll('td')[1].text)
         
     return tickers , company_names
@@ -59,29 +69,53 @@ len(company_names)
 
 ###############################################################################
 'load adjusted s&p 500 data via alpha_vantage api'
-
+'load bitcoin price data'
+'load currency exchange rate data'
 ts = TimeSeries(key='HGIKZ27XNJ7TS7N2')
 fe = ForeignExchange(key='HGIKZ27XNJ7TS7N2')
 cc = CryptoCurrencies(key='HGIKZ27XNJ7TS7N2')
 
-data, meta_data = ts.get_daily_adjusted(symbol = 'SPX', outputsize = 'full')
+'do not consider for adjust closing'
+#SPX_data, meta_data = ts.get_daily_adjusted(symbol = 'SPX', outputsize = 'full')
 
-Dates = [] 
-SPX_data = []
+data = {}
+'load sp500 data'
+_data, _meta_data = ts.get_daily(symbol = 'SPX', outputsize = 'full')
+for date in _data.keys():
+    data[date]= { 'SPX' : float(_data[date]['4. close']) }
 
-for date in data.keys():
-    SPX_data.append( float(data[date]['4. close']) )
-    Dates.append(datetime.strptime(date,'%Y-%m-%d'))
-    
-Dates[0].strftime('%Y-%m-%d')
+'load bitcoin data'
+_data, _meta_data = cc.get_digital_currency_daily(symbol='BTC', market='USD')
+for date in _data.keys():
+    if date in data.keys():        
+        data[date]['BIC']= float(_data[date]['4a. close (USD)']) 
 
-data, _meta_data = ts.get_daily_adjusted(symbol = tickers[0], outputsize = 'full')
+'load usd to cny data'
+_data, _meta_data = fe.get_currency_exchange_daily(from_symbol = 'USD', to_symbol = 'CNY', outputsize = 'full')
+for date in _data.keys():
+    if date in data.keys():        
+        data[date]['CNY']= float(_data[date]['4. close']) 
 
-cc.get_digital_currency_daily(symbol='BTC', market='USD')
-fe.get_currency_exchange_daily(from_symbol = 'USD', to_symbol = 'CNY')
+'load individual stock data for 505 companies on list'
+for company in tqdm(tickers):
+    max_date = np.max([datetime.strptime(item ,'%Y-%m-%d') for item in list(data.keys())])
+    if company not in data[max_date.strftime('%Y-%m-%d')].keys():
+        _data, _meta_data = ts.get_daily(symbol = company, outputsize = 'full')
+        for date in _data.keys():
+            if date in data.keys():        
+                data[date][company]= float(_data[date]['4. close']) 
+        time.sleep(12)
 
 
-    
+'save data'
+with open('sp500.json', 'w') as fp:
+    json.dump(data, fp)
+
+data =  json.loads(open('sp500.json').read())
+
+data
+###############################################################################
+   
 '推荐你用log scaler'
 dataset = [math.log(item) for item in dataset]
 scaler = MinMaxScaler(feature_range=(0, 1))
@@ -90,7 +124,6 @@ scaled_data = scaler.fit_transform(np.asarray(dataset).reshape(-1,1))
 ###############################################################################
 'sentiment data'
 ###############################################################################
-
 'load news data'
 gd2 = gdelt.gdelt(version=2)
 # Single 15 minute interval pull, output to json format with mentions table
